@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI แยกขยะ</title>
+  <!-- ฟอนต์ Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@400;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <h2 style="margin-bottom:0.5em;">แอปแยกขยะด้วย AI</h2>
+
+    <div class="upload-section">
+      <!-- ปุ่มถ่ายภาพและสลับกล้อง -->
+      <button onclick="startCamera()" style="margin-bottom:0.7em;">กดถ่ายภาพ</button>
+      <button onclick="toggleCamera()" style="margin-bottom:0.7em; margin-left:0.5em;">สลับกล้อง</button>
+      <video id="camera" autoplay style="display:none; width:100%; max-width:400px; aspect-ratio:9/16; background:#222; border-radius:16px; box-shadow:0 2px 12px #b6e2b6; border:2px solid #7abf78;"></video>
+      <canvas id="snapshot" width="224" height="224" style="display:none;"></canvas>
+
+      <!-- แสดงภาพที่เลือก -->
+      <img id="preview" src="#" alt="รูปภาพที่อัปโหลด" style="display:none; max-width: 100%; border-radius:12px; box-shadow:0 2px 12px #b6e2b6; border:2px solid #7abf78; margin:1em auto 0.5em auto;">
+
+      <br>
+      <button onclick="capturePhoto()" id="captureBtn" style="font-size:1.1em; background:#e74c3c; color:#fff; border:none; border-radius:10px; padding:12px 28px; font-weight:bold; box-shadow:0 2px 8px #f5b6b6; transition:background 0.2s; margin-top:1em;">ถ่ายภาพ</button>
+      <br>
+      <button onclick="classifyImage()" style="font-size:1.1em;">แยกประเภทขยะ</button>
+    </div>
+    <div style="margin-top:2em; color:#888; font-size:0.95em;">
+      <span>ระบบนี้ใช้ AI เพื่อช่วยแยกประเภทขยะ 4 ประเภท: ขยะทั่วไป, ขยะรีไซเคิล, ขยะเปียก, ขยะอันตราย</span>
+    </div>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image@latest/dist/teachablemachine-image.min.js"></script>
+    <script>
+      const URL = "https://teachablemachine.withgoogle.com/models/42W2O8kNC/";
+      let model;
+      const preview = document.getElementById('preview');
+      let currentFacingMode = 'environment'; // เริ่มต้นที่กล้องหลัง
+      let currentStream = null;
+      const video = document.getElementById('camera');
+      const canvas = document.getElementById('snapshot');
+
+      // โหลดโมเดล AI จาก Teachable Machine
+      async function loadModel() {
+        try {
+          // ใช้ URL ของ Teachable Machine
+          model = await tmImage.load(
+            "https://teachablemachine.withgoogle.com/models/42W2O8kNC/model.json",
+            "https://teachablemachine.withgoogle.com/models/42W2O8kNC/metadata.json"
+          );
+          console.log("Model loaded", model);
+        } catch (e) {
+          alert("โหลดโมเดลไม่สำเร็จ: " + e);
+          console.error("Model load error:", e);
+        }
+      }
+      loadModel();
+
+      // ใช้กล้อง
+      function startCamera() {
+        if (currentStream) {
+          currentStream.getTracks().forEach(track => track.stop());
+        }
+        navigator.mediaDevices.getUserMedia({ video: { facingMode: currentFacingMode } })
+          .then(stream => {
+            video.srcObject = stream;
+            video.style.display = "block";
+            currentStream = stream;
+          });
+      }
+
+      // ปุ่มสลับกล้องหน้า/หลัง
+      function toggleCamera() {
+        currentFacingMode = currentFacingMode === 'environment' ? 'user' : 'environment';
+        startCamera();
+      }
+
+      // ถ่ายภาพจากกล้องมาแสดงใน preview
+      function capturePhoto() {
+        if (!video.srcObject) return;
+        // ปรับขนาด canvas ให้เท่ากับวิดีโอจริง
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/png');
+        preview.src = dataUrl;
+        preview.style.display = 'block';
+      }
+
+      // ประมวลผล
+      async function classifyImage() {
+        if (!model) {
+          alert("โมเดลยังโหลดไม่เสร็จ กรุณารอสักครู่");
+          console.warn("Model not loaded");
+          return;
+        }
+        if (!preview.src || preview.src === "#" || preview.style.display === "none") {
+          alert("กรุณาถ่ายภาพก่อนแยกประเภทขยะ");
+          console.warn("No image in preview");
+          return;
+        }
+        try {
+          console.log("Predicting with preview.src:", preview.src);
+          // ใช้ canvas เป็น input ให้โมเดล
+          const prediction = await model.predict(canvas);
+          console.log("Prediction result:", prediction);
+          const topPrediction = prediction.sort((a, b) => b.probability - a.probability)[0];
+          const imageMap = {
+              "ขยะทั่วไป": "image/ขยะทั่วไป.png",
+              "ขยะเปียก": "image/ขยะเปียก.png",
+              "ขยะรีไซเคิล": "image/ขยะรีไซเคิล.png",
+              "ขยะอันตราย": "image/ขยะอันตราย.png"
+          };
+          localStorage.setItem("result", topPrediction.className);
+          localStorage.setItem("image", preview.src);
+          localStorage.setItem("wasteImage", imageMap[topPrediction.className] || "");
+          window.location.href = "result.html";
+        } catch (err) {
+          alert("เกิดข้อผิดพลาดขณะประมวลผล: " + err);
+          console.error("Prediction error:", err);
+        }
+      }
+    </script>
+  </body>
+</html>
